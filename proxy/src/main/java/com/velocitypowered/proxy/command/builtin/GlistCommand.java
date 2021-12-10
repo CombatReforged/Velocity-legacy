@@ -1,0 +1,124 @@
+package com.velocitypowered.proxy.command.builtin;
+
+import static com.mojang.brigadier.arguments.StringArgumentType.getString;
+
+import com.google.common.collect.ImmutableList;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
+import com.mojang.brigadier.tree.LiteralCommandNode;
+import com.velocitypowered.api.command.BrigadierCommand;
+import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.permission.Tristate;
+import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
+import java.util.List;
+import java.util.Optional;
+import net.kyori.adventure.identity.Identity;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.NamedTextColor;
+
+public class GlistCommand {
+
+  private static final String SERVER_ARG = "server";
+
+  private final ProxyServer server;
+
+  public GlistCommand(ProxyServer server) {
+    this.server = server;
+  }
+
+  /**
+   * Registers this command.
+   */
+  public void register() {
+    LiteralCommandNode<CommandSource> totalNode = LiteralArgumentBuilder
+            .<CommandSource>literal("glist")
+            .requires(source ->
+                    source.getPermissionValue("velocity.command.glist") == Tristate.TRUE)
+            .executes(this::totalCount)
+            .build();
+    ArgumentCommandNode<CommandSource, String> serverNode = RequiredArgumentBuilder
+            .<CommandSource, String>argument(SERVER_ARG, StringArgumentType.string())
+            .suggests((context, builder) -> {
+              for (RegisteredServer server : server.getAllServers()) {
+                builder.suggest(server.getServerInfo().getName());
+              }
+              builder.suggest("all");
+              return builder.buildFuture();
+            })
+            .executes(this::serverCount)
+            .build();
+    totalNode.addChild(serverNode);
+    server.getCommandManager().register(new BrigadierCommand(totalNode));
+  }
+
+  private int totalCount(final CommandContext<CommandSource> context) {
+    final CommandSource source = context.getSource();
+    sendTotalProxyCount(source);
+    source.sendMessage(Identity.nil(),
+        Component.text().content("To view all players on servers, use ")
+            .color(NamedTextColor.YELLOW)
+            .append(Component.text("/glist all", NamedTextColor.DARK_AQUA))
+            .append(Component.text(".", NamedTextColor.YELLOW))
+            .build());
+    return 1;
+  }
+
+  private int serverCount(final CommandContext<CommandSource> context) {
+    final CommandSource source = context.getSource();
+    final String serverName = getString(context, SERVER_ARG);
+    if (serverName.equalsIgnoreCase("all")) {
+      for (RegisteredServer server : BuiltinCommandUtil.sortedServerList(server)) {
+        sendServerPlayers(source, server, true);
+      }
+      sendTotalProxyCount(source);
+    } else {
+      Optional<RegisteredServer> registeredServer = server.getServer(serverName);
+      if (!registeredServer.isPresent()) {
+        source.sendMessage(Identity.nil(),
+            Component.text("Server " + serverName + " doesn't exist.", NamedTextColor.RED));
+        return -1;
+      }
+      sendServerPlayers(source, registeredServer.get(), false);
+    }
+    return 1;
+  }
+
+  private void sendTotalProxyCount(CommandSource target) {
+    target.sendMessage(Identity.nil(), Component.text()
+        .content("There are ").color(NamedTextColor.YELLOW)
+        .append(Component.text(server.getAllPlayers().size(), NamedTextColor.GREEN))
+        .append(Component.text(" player(s) online.", NamedTextColor.YELLOW))
+        .build());
+  }
+
+  private void sendServerPlayers(CommandSource target, RegisteredServer server, boolean fromAll) {
+    List<Player> onServer = ImmutableList.copyOf(server.getPlayersConnected());
+    if (onServer.isEmpty() && fromAll) {
+      return;
+    }
+
+    TextComponent.Builder builder = Component.text()
+        .append(Component.text("[" + server.getServerInfo().getName() + "] ",
+            NamedTextColor.DARK_AQUA))
+        .append(Component.text("(" + onServer.size() + ")", NamedTextColor.GRAY))
+        .append(Component.text(": "))
+        .resetStyle();
+
+    for (int i = 0; i < onServer.size(); i++) {
+      Player player = onServer.get(i);
+      builder.append(Component.text(player.getUsername()));
+
+      if (i + 1 < onServer.size()) {
+        builder.append(Component.text(", "));
+      }
+    }
+
+    target.sendMessage(Identity.nil(), builder.build());
+  }
+}

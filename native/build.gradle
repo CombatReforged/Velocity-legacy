@@ -1,0 +1,34 @@
+plugins {
+    id 'java-library'
+    id 'checkstyle'
+    id 'maven-publish'
+}
+
+apply from: '../gradle/checkstyle.gradle'
+apply from: '../gradle/publish.gradle'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+dependencies {
+    implementation "com.google.guava:guava:${guavaVersion}"
+    implementation "io.netty:netty-handler:${nettyVersion}"
+    implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:${junitVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter-engine:${junitVersion}"
+}
+
+test {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}
